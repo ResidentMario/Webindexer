@@ -1,11 +1,10 @@
-"""Rudimentary crawler for the CUNY Baruch College website. Outputs a CSV list of discovered URLs."""
+"""Rudimentary crawler library for the CUNY Baruch College website. `domainSearch()` is the method of primary interest."""
 
 import requests
 import re
 import csv
 import time
 
-start_time = time.time()
 indexpage = "http://www.baruch.cuny.edu/azindex.html"
 
 def getPage(url):
@@ -14,8 +13,9 @@ def getPage(url):
 
 def getURLfromIndex(str, i_s, i_f):
 	"""This method takes a string, a starting index, and an ending index and returns an HTML-delimited string found by going on either side of that index until certain characters are found.
-		For example, if you are at index 5 in the string ` 12 41-0512 `, this method will return 41-0512.
-		This method will """
+	For example, if you are at index 5 in the string ` 12 41-0512 `, this method will return 41-0512.
+	This method is used to find complete URLs based on identifying snippets. In this case we search for `ahref=`, go forward 7 characters (the length of `ahref=`, plus 
+	the ' or " delimiter, if one is present), and parse out the full URL string from there."""
 	s = i_s
 	f = i_f
 	while s - 1 > 0 and str[s - 1] not in ['\'', '"', ' ', '>']:
@@ -32,10 +32,10 @@ def getDelimitedString(data, index, front_delimiters, back_delimiters):
 		i_back += 1
 	return data[i_front:i_back + 1]
 	
-def getURLsOnPage(url, delimiter):
+def getURLsOnPage(url):
 	"""This method, given a page URL and a URL snippet that acts as a delimiter to hunt with, returns a list of all URLs on the page that either:
-		contain that snippet;
-		or are relative HTML links to subpages of the current page."""
+	contain that snippet;
+	or are relative HTML links to subpages of the current page."""
 	ret = []
 	p = getPage(url)
 	for m in re.finditer('href=', p):
@@ -55,10 +55,13 @@ def getURLsOnPage(url, delimiter):
 			# This is the relative link case. In this case we have to add back the current URL ahead of the relative link in order for it to make sense.
 			else:
 				candidate = url + '/' + getDelimitedString(p, m.start() + 7, ['\'', '"', ' ', '<'], ['\'', '"', ' ', '>'])
+				# Remove the `../` relative path if it is present.
+				if '../' in candidate:
+					candidate = candidate.replace('../', '')
 				# Again, check for uniqueness.
 				if candidate not in ret:
 					ret.append(candidate)
-	return ret
+	return listFixes(ret)
 	
 def prettyPrintList(l):
 	"""List pretty-printer. Useful for debugging."""
@@ -69,7 +72,7 @@ def prettyPrintList(l):
 	
 def mergesortedLists(master, single):
 	"""Merges two already sorted lists.
-		This method is meant for merging single pages' link lists with a running master copy. It's optimized for that case."""
+	This method is meant for merging single pages' link lists with a running master copy. It's optimized for that case."""
 	m_c = 0
 	s_c = 0
 	for item in single:
@@ -112,6 +115,10 @@ def listFixes(list):
 		if '?ical=' in list[i]:
 			list.pop(i)
 			i-=1
+		# aspx pages are disabled because a few of them tend to run on forever.
+		elif '.aspx' in list[i]:
+			list.pop(i)
+			i-=1	
 		# CSS files are removed, obviously. Ex. `http://blogs.baruch.cuny.edu/fieldcenter/wp-content/plugins/cac-bp-admin-bar-mods/css/admin-bar.css?ver=4.3.1`
 		elif '.css' in list[i]:
 			list.pop(i)
@@ -166,37 +173,54 @@ def listFixes(list):
 def getURLsInIndex():
 	"""This method lists all pages linked to by subpages of the index page, as well as the index page itself.
 	It's a test method intended to ensure that the script is operating efficiently."""
-	master = quickSort(getURLsOnPage(indexpage, 'baruch.cuny'))
+	master = quickSort(getURLsOnPage(indexpage))
 	for p in master:
-		master = mergesortedLists(master, quickSort(getURLsOnPage(p, 'baruch.cuny')))
-		print(p, 'executed!')
+		master = mergesortedLists(master, quickSort(getURLsOnPage(p)))
+		print(p)
 	master = listFixes(master)
 	return master
 
 def commitURLsToFile(list, csvfile):
-	"""This method stores the URLs in a file, and is the last step in the execution of this script. For the moment it stores output in a CSV file."""
+	"""This method stores the URLs in a CSV file."""
 	with open(csvfile, 'w') as fp:
 		for item in list:
 			print(item, file=fp)
+	print('File saved to', csvfile)
 
-def searchURLsTwoDeep(basepage):
-	"""Method needs rewriting..."""
-	master = quickSort(getURLsOnPage(basepage, 'baruch.cuny'))
-	for p in master:
-		nextMaster = listFixes(quickSort(getURLsOnPage(p, 'baruch.cuny')))
-		for p2 in nextMaster:
-			if p2 not in master:
-				nextMaster = mergesortedLists(nextMaster, listFixes(quickSort(getURLsOnPage(p, 'baruch.cuny'))))
-				print(p2, 'executed!')
-		master = mergesortedLists(master, nextMaster)
-		print(p, 'exhausted!')
+def enumerateFacultyManual():
+	"""This method returns a list of pages within the Baruch faculty manual, taken off of one page.
+	Also a test method."""
+	ret = []
+	for url in getURLsOnPage('http://www.baruch.cuny.edu/facultyhandbook/topics.htm'):
+		if 'facultyhandbook' in url:
+			ret += [url]
+	return ret
 
-u = getURLsInIndex()
-prettyPrintList(u)
-commitURLsToFile(u, 'urls.csv')
-print("Done!")
-# u = searchURLsTwoDeep()
+def domainSearch(delimiter, starting_page):
+	"""Wrapper method for the recursive page discovery crawler. This is the primary method meant to be called when using this library."""
+	return quickSort(_domainSearch(delimiter, starting_page, []))
+	
+def _domainSearch(delimiter, page, list_of_pages_so_far):
+	urls = getURLsOnPage(page)
+	for url in urls:
+		if delimiter in url and url not in list_of_pages_so_far:
+			print(url + '/' in list_of_pages_so_far)
+			# This last condition is a check to remove the equivalent `foo/bar/` if `foo/bar` is present.
+			# print(url)
+			list_of_pages_so_far = _domainSearch(delimiter, url, list_of_pages_so_far + [url])
+	return list_of_pages_so_far
+	
+# u = getURLsInIndex()
+# prettyPrintList(u)
 # commitURLsToFile(u, 'urls.csv')
 # print("Done!")
+###
+# u = searchURLsTwoDeep()
+# commitURLsToFile(u, 'urls.csv')
+# prettyPrintList(u)
 
-print("Execution time: ~%s seconds" %  format((time.time() - start_time), ".3f"))
+# prettyPrintList(domainSearch('facultyhandbook', 'http://www.baruch.cuny.edu/facultyhandbook/topics.htm'))
+# prettyPrintList(domainSearch('math', 'http://www.baruch.cuny.edu/math/index.html'))
+# prettyPrintList(domainSearch('zicklin', 'http://zicklin.baruch.cuny.edu/'))
+
+# print("Execution time: ~%s seconds" %  format((time.time() - start_time), ".3f"))
