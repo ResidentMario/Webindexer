@@ -4,8 +4,6 @@ import requests
 import re
 import csv
 
-indexpage = "http://www.baruch.cuny.edu/azindex.html"
-
 def getPage(url):
 	"""Wrapper of a method provided by the requests library for retrieving web data."""
 	return requests.get(url).text
@@ -164,7 +162,7 @@ def listFixes(list):
 def getURLsInIndex():
 	"""This method lists all pages linked to by subpages of the index page, as well as the index page itself.
 	It's a test method intended to ensure that the script is operating efficiently."""
-	master = quickSort(getURLsOnPage(indexpage))
+	master = quickSort(getURLsOnPage('http://www.baruch.cuny.edu/azindex.html'))
 	for p in master:
 		master = mergesortedLists(master, quickSort(getURLsOnPage(p)))
 		print(p)
