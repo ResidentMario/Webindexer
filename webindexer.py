@@ -3,7 +3,6 @@
 import requests
 import re
 import csv
-import time
 
 indexpage = "http://www.baruch.cuny.edu/azindex.html"
 
@@ -204,23 +203,6 @@ def _domainSearch(delimiter, page, list_of_pages_so_far):
 	urls = getURLsOnPage(page)
 	for url in urls:
 		if delimiter in url and url not in list_of_pages_so_far:
-			print(url + '/' in list_of_pages_so_far)
-			# This last condition is a check to remove the equivalent `foo/bar/` if `foo/bar` is present.
-			# print(url)
+			# TODO: Check to remove the equivalent `foo/bar/` if `foo/bar` is present.
 			list_of_pages_so_far = _domainSearch(delimiter, url, list_of_pages_so_far + [url])
 	return list_of_pages_so_far
-	
-# u = getURLsInIndex()
-# prettyPrintList(u)
-# commitURLsToFile(u, 'urls.csv')
-# print("Done!")
-###
-# u = searchURLsTwoDeep()
-# commitURLsToFile(u, 'urls.csv')
-# prettyPrintList(u)
-
-# prettyPrintList(domainSearch('facultyhandbook', 'http://www.baruch.cuny.edu/facultyhandbook/topics.htm'))
-# prettyPrintList(domainSearch('math', 'http://www.baruch.cuny.edu/math/index.html'))
-# prettyPrintList(domainSearch('zicklin', 'http://zicklin.baruch.cuny.edu/'))
-
-# print("Execution time: ~%s seconds" %  format((time.time() - start_time), ".3f"))
