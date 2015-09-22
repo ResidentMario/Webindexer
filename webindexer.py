@@ -1,4 +1,4 @@
-"""Rudimentary crawler library for the CUNY Baruch College website. `domainSearch()` is the method of primary interest."""
+"""Web crawler library for the CUNY Baruch College website. `domainSearch()` is the method of primary interest."""
 
 import requests
 import re
@@ -50,6 +50,10 @@ def getURLsOnPage(url):
 					# Before appending we must must downgrade `https` links to `http` ones. The website uses a mix of both, but using both will mess with our sorting.
 					if 'https' in candidate:
 						candidate = candidate.replace('https', 'http')
+					# In both a direct or relative link we can have two types of links pointing to the same place: `foo/bar` and `foo/bar/`.
+					# To keep from doubling these let's drop the `/` character at the end of the URL, if one is present.
+					if candidate[len(candidate) - 1] == '/':
+						candidate = candidate[:len(candidate) - 1]
 					ret.append(candidate)
 			# This is the relative link case. In this case we have to add back the current URL ahead of the relative link in order for it to make sense.
 			else:
@@ -57,6 +61,10 @@ def getURLsOnPage(url):
 				# Remove the `../` relative path if it is present.
 				if '../' in candidate:
 					candidate = candidate.replace('../', '')
+				# Again: in both a direct or relative link we can have two types of links pointing to the same place: `foo/bar` and `foo/bar/`.
+				# To keep from doubling these let's drop the `/` character at the end of the URL, if one is present.
+				if candidate[len(candidate) - 1] == '/':
+					candidate = candidate[:len(candidate) - 2]
 				# Again, check for uniqueness.
 				if candidate not in ret:
 					ret.append(candidate)
@@ -106,58 +114,42 @@ def quickSort(array):
 	else:  # You need to handle the part at the end of the recursion - when you only have one element in your array, just return the array.
 		return array
 
+def serviceCheck(string):
+	"""A helper method for the `listFixes(list)` method, below.
+	This method returns True if a URL contains any `.ending` other than `.pdf`, `.html`, or `.htm`. It returns False otherwise.
+	True results are then thrown out by listFixes."""
+	chk = string.rfind('/')
+	if chk == -1:
+		return False
+	elif '.' not in string[chk:]:
+		return False
+	else:
+		if '.pdf' not in string[chk:] and '.html' not in string[chk:] and '.htm' not in string[chk:]:
+			return True
+		
 def listFixes(list):
 	"""This method executes a bunch of fixes on the list of URLs returned by the crawler, fixing issues that occur."""
 	i = 0
 	while i < len(list):
-		# iCal is a calender format we don't parse. Ex. `http://blogs.baruch.cuny.edu/fieldcenter/events/?ical=1`
-		if '?ical=' in list[i]:
+		# Characters associated with page-serving (`?`, `:`, `//`, and `#`) are deleted from the list.
+		# `?` indicates interactive content. This has a bad tendency of causing infinite loops: one page on the MFE subsite came to /monty/monty/monty/...
+		# `:` indicates a script of some sort, usually one of the following: `javascript:`, `tel:`, or `mailto:`.
+		# `#` indicates an internal link. There's no need to include a document multiple times, once for each section linked to!
+		if '?' in list[i] or ':' in list[i][7:] or '#' in list[i] or '//' in list[i][7:]:
+			# print(list[i], 'deleted!')
 			list.pop(i)
 			i-=1
-		# aspx pages are disabled because a few of them tend to run on forever.
-		elif '.aspx' in list[i]:
-			list.pop(i)
-			i-=1	
-		# CSS files are removed, obviously. Ex. `http://blogs.baruch.cuny.edu/fieldcenter/wp-content/plugins/cac-bp-admin-bar-mods/css/admin-bar.css?ver=4.3.1`
-		elif '.css' in list[i]:
-			list.pop(i)
-			i-=1
-		# PHP executables are interactive. Google scrapes these, but it's a little too much to ask of us... Ex. `http://blogs.baruch.cuny.edu/fieldcenter/xmlrpc.php`
-		elif '.php' in list[i]:
+		# Most pages containing the character `.` are also not good for our purposes. This is stuff like `.aspx` and `.css`.
+		# However there are a couple of `.` containers we want to keep: `.pdf`, `.html`, `.htm`. So we include these manually.
+		# This is a decently complex operation. The `serviceCheck(string)` method, defined directly above, is used to accomplish it.
+		elif serviceCheck(list[i]):
+			# print(list[i], 'deleted!')
 			list.pop(i)
 			i-=1
-		# Sometimes pages are included multiple times: the base page and a heading of comments on the page. Eg.
-		# `http://blogs.baruch.cuny.edu/sustainability/will-the-climate-really-benefit-from-natural-gas-fueled-trucks-and-buses/` and
-		# `http://blogs.baruch.cuny.edu/sustainability/will-the-climate-really-benefit-from-natural-gas-fueled-trucks-and-buses/#respond`
-		# are both returned. The latter needs to be cleaned off.
-		# We're just going to assume that the base list[i] is included as well.
-		elif '#' in list[i]:
+		# We we want to exclude URLs with `/feed` in them, like eg. `http://mfe.baruch.edu/feed/atom`. These cannot be parsed.
+		elif '/feed' in list[i]:
 			list.pop(i)
 			i-=1
-		# XML files. Ex. `http://blsci.baruch.cuny.edu/wp-includes/wlwmanifest.xml`
-		elif '.xml' in list[i]:
-			list.pop(i)
-			i-=1
-		# Image files. Ex. `http://blsci.baruch.cuny.edu/wp-content/uploads/2013/07/favicon.gif`
-		elif '.gif' in list[i] or '.jpg' in list[i] or '.png' in list[i] or 'ico' in list[i]:
-			list.pop(i)
-			i-=1
-		# Doubled, tripled, quadrupled braces make an appearance. Ex. `http://ctl.baruch.cuny.edu//mailto:kannan.mohan@baruch.cuny.edu`
-		elif '//' in list[i][7:]:
-			list.pop(i)
-			i-=1
-		# Mailing queries.
-		elif 'mailto' in list[i]:
-			list.pop(i)
-			i-=1
-		# .cgi files. Ex. `http://www.baruch.cuny.edu/azindex.html/cgi-bin/schedule/schedule.cgi`
-		elif '.cgi' in list[i]:
-			list.pop(i)
-			i-=1
-		# javascripts.
-		elif 'javascript:' in list[i]:
-			list.pop(i)
-			i -= 1
 		# A mass domain that's not very useful: all pages with the predicate `http://blogs.baruch.cuny.edu/members/` Ex. `http://blogs.baruch.cuny.edu/members/z-wong/`
 		elif 'http://blogs.baruch.cuny.edu/members/' in list[i]:
 			list.pop(i)
@@ -202,7 +194,15 @@ def domainSearch(delimiter, starting_page):
 def _domainSearch(delimiter, page, list_of_pages_so_far):
 	urls = getURLsOnPage(page)
 	for url in urls:
+		# Check that URL is valid. If so, include it.
 		if delimiter in url and url not in list_of_pages_so_far:
-			# TODO: Check to remove the equivalent `foo/bar/` if `foo/bar` is present.
-			list_of_pages_so_far = _domainSearch(delimiter, url, list_of_pages_so_far + [url])
+			print(url)
+			# PDFs won't give us back any links because of their encoding so there's no point trying to read them for links.
+			# In fact, doing so will slow down the process a lot.
+			# So we exclude them using an if check.
+			if '.pdf' in url:
+				list_of_pages_so_far += [url]
+			else:
+				# TODO: Check to remove the equivalent `foo/bar/` if `foo/bar` is present.
+				list_of_pages_so_far = _domainSearch(delimiter, url, list_of_pages_so_far + [url])
 	return list_of_pages_so_far
